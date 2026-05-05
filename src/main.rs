@@ -42,6 +42,14 @@ struct Cli {
     #[arg(short, long, default_value_t = 512, value_name = "N")]
     concurrency: usize,
 
+    /// Request timeout in seconds
+    #[arg(long, default_value_t = 5, value_name = "SECS")]
+    timeout: u64,
+
+    /// Connection timeout in seconds
+    #[arg(long, default_value_t = 3, value_name = "SECS")]
+    connect_timeout: u64,
+
     /// Suppress progress bar (useful in CI)
     #[arg(short, long)]
     quiet: bool,
@@ -55,11 +63,13 @@ async fn main() -> anyhow::Result<()> {
 
     print_banner();
     println!(
-        "{} {} targets | {} concurrency | {} seconds\n",
+        "{} {} targets | {} concurrency | {} seconds | timeout {}s/{}s\n",
         "►".cyan().bold(),
         cli.targets.len().to_string().yellow(),
         cli.concurrency.to_string().yellow(),
         cli.duration.to_string().yellow(),
+        cli.timeout.to_string().yellow(),
+        cli.connect_timeout.to_string().yellow(),
     );
     for t in &cli.targets {
         println!("  {} {}", "•".dimmed(), t.underline());
@@ -72,8 +82,8 @@ async fn main() -> anyhow::Result<()> {
         .tcp_nodelay(true)
         .danger_accept_invalid_certs(false)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(Duration::from_secs(5))
-        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(cli.timeout))
+        .connect_timeout(Duration::from_secs(cli.connect_timeout))
         .http2_adaptive_window(true)
         .build()?;
 
@@ -106,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // ── Tick loop ─────────────────────────────────────────────────────────────
-    let stats_ref        = Arc::clone(&stats);
+    let stats_ref           = Arc::clone(&stats);
     let mut prev_sent       = 0u64;
     let mut prev_success    = 0u64;
     let mut prev_errors     = 0u64;
@@ -116,13 +126,11 @@ async fn main() -> anyhow::Result<()> {
         sleep(Duration::from_secs(1)).await;
         let snap = stats_ref.snapshot();
 
-        // Per-second deltas
         let delta_sent       = snap.sent.saturating_sub(prev_sent);
         let delta_success    = snap.success.saturating_sub(prev_success);
         let delta_errors     = snap.errors.saturating_sub(prev_errors);
         let delta_latency_us = snap.latency_us_total.saturating_sub(prev_latency_us);
 
-        // Per-second avg latency in ms
         let delta_avg_ms = if delta_success > 0 {
             (delta_latency_us / delta_success) as f64 / 1_000.0
         } else {
