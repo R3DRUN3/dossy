@@ -18,7 +18,7 @@ use stats::Stats;
 #[command(
     name    = "dossy",
     version,
-    about   = "High-throughput async HTTP stress tester",
+    about   = "404: your server's will to live not found.",
 )]
 struct Cli {
     /// One or more target URLs (e.g. https://example.com)
@@ -59,13 +59,8 @@ async fn main() -> anyhow::Result<()> {
         .pool_max_idle_per_host(cli.concurrency)
         .tcp_keepalive(Duration::from_secs(30))
         .tcp_nodelay(true)
-        // Enable HTTP/2 for multiplexing — massive throughput gain
-        .http2_prior_knowledge()
-        .http2_keep_alive_interval(Duration::from_secs(5))
-        .http2_keep_alive_timeout(Duration::from_secs(10))
         .danger_accept_invalid_certs(false)
         .redirect(reqwest::redirect::Policy::limited(5))
-        // Short timeout: don't let slow responses pile up and starve workers
         .timeout(Duration::from_secs(5))
         .connect_timeout(Duration::from_secs(3))
         .build()?;

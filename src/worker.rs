@@ -8,7 +8,7 @@ use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
 use crate::stats::SharedStats;
-use crate::utils::{HTTP_METHODS, USER_AGENTS, random_pick};
+use crate::utils::{HTTP_METHODS, USER_AGENTS, random_pick, random_path, roll_random_path};
 
 pub(crate) async fn run_worker(
     client:  Client,
@@ -23,20 +23,28 @@ pub(crate) async fn run_worker(
             break;
         }
 
-        let url    = random_pick(&targets, &mut rng).clone();
+        // Pick base target, then maybe append a random path
+        let base   = random_pick(&targets, &mut rng);
+        let url = if roll_random_path(&mut rng) {
+            let path = random_path(&mut rng);
+            // Avoid double-slash if the base URL already has a trailing slash
+            let sep = if base.ends_with('/') { "" } else { "/" };
+            format!("{}{}{}", base, sep, path)
+        } else {
+            base.clone()
+        };
+
         let method = random_pick(HTTP_METHODS, &mut rng);
-        let ua     = random_pick(USER_AGENTS, &mut rng);
+        let ua     = random_pick(USER_AGENTS,  &mut rng);
 
         let request = build_request(&client, method, &url, ua);
 
         let t0 = Instant::now();
 
         tokio::select! {
-            biased; // check cancellation branch first every iteration
+            biased;
 
             _ = token.cancelled() => {
-                // We were cancelled — do NOT record this as an error,
-                // the request was intentionally interrupted by shutdown.
                 break;
             }
 
@@ -44,9 +52,6 @@ pub(crate) async fn run_worker(
                 match result {
                     Ok(_)  => stats.record_success(t0.elapsed()),
                     Err(_) => {
-                        // Only record as error if we were NOT cancelled.
-                        // A cancelled token means the error is just the
-                        // abort tearing down the in-flight reqwest future.
                         if !token.is_cancelled() {
                             stats.record_error();
                         }
