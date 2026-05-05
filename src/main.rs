@@ -44,6 +44,7 @@ const USER_AGENTS: &[&str] = &[
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.7 Safari/537.36",
 ];
 
+const HTTP_METHODS :  &[&str] = &["GET", "POST", "PUT", "DEL", "OPTIONS", "PATCH"];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
