@@ -3,10 +3,10 @@ use std::time::Duration;
 
 use clap::Parser;
 use colored::Colorize;
-use futures::future;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
 mod stats;
 mod utils;
@@ -14,24 +14,15 @@ mod worker;
 
 use stats::Stats;
 
-// ── CLI ──────────────────────────────────────────────────────────────────────
-
-/// dossy — HTTP Layer-7 stress tester
 #[derive(Parser, Debug)]
 #[command(
     name    = "dossy",
     version,
     about   = "High-throughput async HTTP stress tester",
-    long_about = None,
 )]
 struct Cli {
-    /// One or more target URLs  (e.g. https://example.com)
-    #[arg(
-        short, long,
-        required = true,
-        value_name = "URL",
-        num_args = 1..
-    )]
+    /// One or more target URLs (e.g. https://example.com)
+    #[arg(short, long, required = true, value_name = "URL", num_args = 1..)]
     targets: Vec<String>,
 
     /// How long to run the test (seconds)
@@ -42,12 +33,10 @@ struct Cli {
     #[arg(short, long, default_value_t = 512, value_name = "N")]
     concurrency: usize,
 
-    /// Suppress per-tick progress output (useful in CI)
+    /// Suppress progress bar (useful in CI)
     #[arg(short, long)]
     quiet: bool,
 }
-
-// ── Entry point ──────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -66,21 +55,24 @@ async fn main() -> anyhow::Result<()> {
     }
     println!();
 
-    // Shared, connection-pooling HTTP client — one instance for ALL workers.
     let client = Client::builder()
         .pool_max_idle_per_host(cli.concurrency)
         .tcp_keepalive(Duration::from_secs(30))
         .tcp_nodelay(true)
+        // Enable HTTP/2 for multiplexing — massive throughput gain
+        .http2_prior_knowledge()
+        .http2_keep_alive_interval(Duration::from_secs(5))
+        .http2_keep_alive_timeout(Duration::from_secs(10))
         .danger_accept_invalid_certs(false)
         .redirect(reqwest::redirect::Policy::limited(5))
+        // Short timeout: don't let slow responses pile up and starve workers
+        .timeout(Duration::from_secs(5))
+        .connect_timeout(Duration::from_secs(3))
         .build()?;
 
-    let targets  = Arc::new(cli.targets.clone());
-    let stats    = Arc::new(Stats::default());
-
-    // Deadline: workers poll Arc strong-count; when timer drops its clone
-    // the count falls and workers exit their loop organically.
-    let deadline = Arc::new(tokio::sync::Notify::new());
+    let targets = Arc::new(cli.targets.clone());
+    let stats   = Arc::new(Stats::default());
+    let token   = CancellationToken::new();
 
     // ── Spawn workers ────────────────────────────────────────────────────────
     let mut handles = Vec::with_capacity(cli.concurrency);
@@ -89,17 +81,17 @@ async fn main() -> anyhow::Result<()> {
             client.clone(),
             Arc::clone(&targets),
             Arc::clone(&stats),
-            Arc::clone(&deadline),
+            token.clone(),
         ));
         handles.push(h);
     }
 
-    // ── Progress bar / ticker ────────────────────────────────────────────────
+    // ── Progress bar ─────────────────────────────────────────────────────────
     let bar = if !cli.quiet {
         let pb = ProgressBar::new(cli.duration);
         pb.set_style(
             ProgressStyle::with_template(
-                "{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len}s  {msg}"
+                "{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len}s  {msg}",
             )?
             .progress_chars("█▉▊▋▌▍▎▏  "),
         );
@@ -109,9 +101,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let stats_ref = Arc::clone(&stats);
-    let tick_duration = Duration::from_secs(1);
     for elapsed in 0..cli.duration {
-        sleep(tick_duration).await;
+        sleep(Duration::from_secs(1)).await;
         let snap = stats_ref.snapshot();
         let msg = format!(
             "req/s ≈ {:>6}  ✓ {:>8}  ✗ {:>6}  avg {:>7.2}ms",
@@ -128,12 +119,13 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // ── Signal workers to stop ───────────────────────────────────────────────
-    deadline.notify_waiters(); // wake any parked tasks
-    drop(deadline);            // drop our Arc half → workers' Arc::strong_count check triggers
-
-    // Wait for all workers to finish their current request and exit.
-    future::join_all(handles).await;
+    // ── Shutdown ─────────────────────────────────────────────────────────────
+    // 1. Signal workers to stop accepting new work
+    token.cancel();
+    // 2. Hard-abort every task — instant, no waiting for in-flight requests
+    for handle in &handles {
+        handle.abort();
+    }
 
     if let Some(pb) = bar {
         pb.finish_and_clear();
@@ -144,26 +136,10 @@ async fn main() -> anyhow::Result<()> {
     println!("\n{}", "═══════════════════════════════════════".cyan());
     println!(" {} Final Report", "dossy".bold().cyan());
     println!("{}", "═══════════════════════════════════════".cyan());
-    println!(
-        "  {:<22} {}",
-        "Total requests sent:".dimmed(),
-        snap.sent.to_string().bold()
-    );
-    println!(
-        "  {:<22} {}",
-        "Successful (2xx/3xx):".dimmed(),
-        snap.success.to_string().green().bold()
-    );
-    println!(
-        "  {:<22} {}",
-        "Errors / timeouts:".dimmed(),
-        snap.errors.to_string().red().bold()
-    );
-    println!(
-        "  {:<22} {:.2} ms",
-        "Avg latency:".dimmed(),
-        snap.avg_latency_ms
-    );
+    println!("  {:<22} {}", "Total requests sent:".dimmed(),  snap.sent.to_string().bold());
+    println!("  {:<22} {}", "Successful (2xx/3xx):".dimmed(), snap.success.to_string().green().bold());
+    println!("  {:<22} {}", "Errors / timeouts:".dimmed(),    snap.errors.to_string().red().bold());
+    println!("  {:<22} {:.2} ms", "Avg latency:".dimmed(),    snap.avg_latency_ms);
     println!(
         "  {:<22} {:.0} req/s",
         "Throughput:".dimmed(),

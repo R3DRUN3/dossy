@@ -1,47 +1,60 @@
 use std::sync::Arc;
 use std::time::Instant;
+
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use reqwest::Client;
 use tokio::time::{sleep, Duration};
+use tokio_util::sync::CancellationToken;
 
 use crate::stats::SharedStats;
 use crate::utils::{HTTP_METHODS, USER_AGENTS, random_pick};
 
-/// A single worker loop: keeps firing requests until the deadline token is
-/// cancelled. Each worker owns its own `SmallRng` — no shared RNG mutex.
 pub(crate) async fn run_worker(
-    client:   Client,
-    targets:  Arc<Vec<String>>,
-    stats:    SharedStats,
-    deadline: Arc<tokio::sync::Notify>,
+    client:  Client,
+    targets: Arc<Vec<String>>,
+    stats:   SharedStats,
+    token:   CancellationToken,
 ) {
-    // Thread-local, non-cryptographic RNG — fastest option for random picks.
     let mut rng = SmallRng::from_os_rng();
 
     loop {
-        // Non-blocking check: has the deadline fired?
-        // We use try_recv pattern via a flag set by the timer task.
-        // The Notify is used as a broadcast; we peek without consuming.
-        if Arc::strong_count(&deadline) == 1 {
-            // Only our reference remains — timer dropped its half. Stop.
+        if token.is_cancelled() {
             break;
         }
 
         let url    = random_pick(&targets, &mut rng).clone();
         let method = random_pick(HTTP_METHODS, &mut rng);
-        let ua     = random_pick(USER_AGENTS,  &mut rng);
+        let ua     = random_pick(USER_AGENTS, &mut rng);
 
         let request = build_request(&client, method, &url, ua);
 
         let t0 = Instant::now();
-        match request.send().await {
-            Ok(_)  => stats.record_success(t0.elapsed()),
-            Err(_) => stats.record_error(),
+
+        tokio::select! {
+            biased; // check cancellation branch first every iteration
+
+            _ = token.cancelled() => {
+                // We were cancelled — do NOT record this as an error,
+                // the request was intentionally interrupted by shutdown.
+                break;
+            }
+
+            result = request.send() => {
+                match result {
+                    Ok(_)  => stats.record_success(t0.elapsed()),
+                    Err(_) => {
+                        // Only record as error if we were NOT cancelled.
+                        // A cancelled token means the error is just the
+                        // abort tearing down the in-flight reqwest future.
+                        if !token.is_cancelled() {
+                            stats.record_error();
+                        }
+                    }
+                }
+            }
         }
 
-        // Tiny yield so the tokio scheduler can interleave other tasks
-        // without burning 100 % of a core between awaits.
         sleep(Duration::ZERO).await;
     }
 }
@@ -63,5 +76,5 @@ fn build_request(
     };
     rb.header("User-Agent", ua)
       .header("Accept", "*/*")
-      .timeout(std::time::Duration::from_secs(10))
+      .timeout(Duration::from_secs(5))
 }
