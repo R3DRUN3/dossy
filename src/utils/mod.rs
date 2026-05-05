@@ -63,8 +63,7 @@ pub(crate) fn random_path(rng: &mut impl Rng) -> String {
         .collect()
 }
 
-/// Returns true with exactly 0.35% probability.
-/// Uses an integer roll over 100_000 to avoid any f64 precision quirks.
+/// Returns true with 35% probability.
 pub(crate) fn roll_random_path(rng: &mut impl Rng) -> bool {
-    rng.random_range(0..100_000) < 350   // 350 / 100_000 = 0.35%
+    rng.random_range(0..100_000) < 35_000
 }
