@@ -30,6 +30,8 @@ For a deep dive on how Red Teams can build infrastructure to simulate DDoS attac
 You can download the [latest release binary](https://github.com/R3DRUN3/dossy/releases/latest), or install it via [docker](https://github.com/R3DRUN3/dossy/pkgs/container/dossy).  
 
 ## Usage  
+[video-demo.webm](https://github.com/user-attachments/assets/e25236a9-d9e9-4a50-b45a-19e39bb50c65)
+
 
 
 
