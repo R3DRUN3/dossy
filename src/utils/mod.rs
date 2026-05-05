@@ -1,3 +1,5 @@
+use rand::Rng;
+
 pub(crate) const USER_AGENTS: &[&str] = &[
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -41,4 +43,13 @@ pub(crate) const USER_AGENTS: &[&str] = &[
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.7 Safari/537.36",
 ];
 
-pub(crate) const HTTP_METHODS :  &[&str] = &["GET", "POST", "PUT", "DEL", "OPTIONS", "PATCH"];
+// Note: pure HTTP method tokens — no body methods excluded here,
+// the caller decides whether to attach a body.
+pub(crate) const HTTP_METHODS: &[&str] = &[
+    "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH",
+];
+
+/// Pick a random element from any slice.
+pub(crate) fn random_pick<'a, T>(slice: &'a [T], rng: &mut impl Rng) -> &'a T {
+    &slice[rng.random_range(0..slice.len())]
+}

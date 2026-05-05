@@ -4,5 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-reqwest = { version = "0.13", features = ["json"] }
-tokio = { version = "1", features = ["full"] }
+reqwest   = { version = "0.13", features = ["json"] }
+tokio     = { version = "1",    features = ["full"] }
+clap      = { version = "4",    features = ["derive"] }
+rand      = "0.9"
+futures   = "0.3"
+indicatif = "0.17"
+colored   = "2"
+anyhow    = "1"
+
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+panic         = "abort"
+strip         = true
