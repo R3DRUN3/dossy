@@ -1,6 +1,6 @@
 [package]
 name = "dossy"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
 
 [dependencies]
@@ -13,6 +13,7 @@ futures    = "0.3"
 indicatif  = "0.17"
 colored    = "2"
 anyhow     = "1"
+atty       = "0.2"
 
 [profile.release]
 opt-level     = 3

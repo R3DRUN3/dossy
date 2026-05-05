@@ -29,7 +29,6 @@ use stats::Stats;
   ╚═════╝  ╚═════╝ ╚══════╝╚══════╝   ╚═╝
 "
 )]
-
 struct Cli {
     /// One or more target URLs (e.g. https://example.com)
     #[arg(short, long, required = true, value_name = "URL", num_args = 1..)]
@@ -51,6 +50,10 @@ struct Cli {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    // Auto-enable quiet mode when stdout is not a TTY (e.g. Docker, CI pipe).
+    // This replaces the silent broken progress bar with plain println! lines.
+    let quiet = cli.quiet || !atty::is(atty::Stream::Stdout);
 
     print_banner();
     println!(
@@ -92,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // ── Progress bar ─────────────────────────────────────────────────────────
-    let bar = if !cli.quiet {
+    let bar = if !quiet {
         let pb = ProgressBar::new(cli.duration);
         pb.set_style(
             ProgressStyle::with_template(
@@ -125,9 +128,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // ── Shutdown ─────────────────────────────────────────────────────────────
-    // 1. Signal workers to stop accepting new work
     token.cancel();
-    // 2. Hard-abort every task — instant, no waiting for in-flight requests
     for handle in &handles {
         handle.abort();
     }
@@ -162,7 +163,8 @@ async fn main() -> anyhow::Result<()> {
 
 fn print_banner() {
     println!(
-    "{}{}",
-    Cli::command().get_long_about().unwrap_or_default().to_string().cyan().bold(),
-    Cli::command().get_about().unwrap_or_default().to_string().cyan().bold());
+        "{}{}",
+        Cli::command().get_long_about().unwrap_or_default().to_string().cyan().bold(),
+        Cli::command().get_about().unwrap_or_default().to_string().cyan().bold()
+    );
 }
