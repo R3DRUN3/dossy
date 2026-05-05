@@ -47,12 +47,10 @@ struct Cli {
     quiet: bool,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Auto-enable quiet mode when stdout is not a TTY (e.g. Docker, CI pipe).
-    // This replaces the silent broken progress bar with plain println! lines.
     let quiet = cli.quiet || !atty::is(atty::Stream::Stdout);
 
     print_banner();
@@ -69,13 +67,14 @@ async fn main() -> anyhow::Result<()> {
     println!();
 
     let client = Client::builder()
-        .pool_max_idle_per_host(cli.concurrency)
+        .pool_max_idle_per_host(cli.concurrency * 2)
         .tcp_keepalive(Duration::from_secs(30))
         .tcp_nodelay(true)
         .danger_accept_invalid_certs(false)
         .redirect(reqwest::redirect::Policy::limited(5))
         .timeout(Duration::from_secs(5))
         .connect_timeout(Duration::from_secs(3))
+        .http2_adaptive_window(true)
         .build()?;
 
     let targets = Arc::new(cli.targets.clone());
@@ -127,11 +126,15 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // ── Shutdown ─────────────────────────────────────────────────────────────
+    // ── Graceful shutdown ────────────────────────────────────────────────────
     token.cancel();
-    for handle in &handles {
-        handle.abort();
-    }
+
+    let _ = tokio::time::timeout(Duration::from_secs(2), async {
+        for handle in handles {
+            let _ = handle.await;
+        }
+    })
+    .await;
 
     if let Some(pb) = bar {
         pb.finish_and_clear();

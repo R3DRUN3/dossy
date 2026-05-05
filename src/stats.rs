@@ -1,27 +1,28 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Shared, lock-free counters updated from every worker task.
 #[derive(Default)]
 pub(crate) struct Stats {
-    pub sent:    AtomicU64,
-    pub success: AtomicU64,
-    pub errors:  AtomicU64,
+    pub sent:             AtomicU64,
+    pub success:          AtomicU64,
+    pub errors:           AtomicU64,
     pub latency_us_total: AtomicU64, // microseconds, summed
 }
 
 impl Stats {
-    pub(crate) fn record_success(&self, latency: Duration) {
-        self.sent.fetch_add(1, Ordering::Relaxed);
-        self.success.fetch_add(1, Ordering::Relaxed);
-        self.latency_us_total
-            .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
-    }
 
-    pub(crate) fn record_error(&self) {
-        self.sent.fetch_add(1, Ordering::Relaxed);
-        self.errors.fetch_add(1, Ordering::Relaxed);
+    pub(crate) fn flush(
+        &self,
+        sent:       u64,
+        success:    u64,
+        errors:     u64,
+        latency_us: u64,  // total microseconds for this batch
+    ) {
+        self.sent            .fetch_add(sent,       Ordering::Relaxed);
+        self.success         .fetch_add(success,    Ordering::Relaxed);
+        self.errors          .fetch_add(errors,     Ordering::Relaxed);
+        self.latency_us_total.fetch_add(latency_us, Ordering::Relaxed);
     }
 
     pub(crate) fn snapshot(&self) -> StatsSnapshot {
@@ -40,10 +41,10 @@ impl Stats {
 
 #[derive(Debug, Clone)]
 pub(crate) struct StatsSnapshot {
-    pub sent:            u64,
-    pub success:         u64,
-    pub errors:          u64,
-    pub avg_latency_ms:  f64,
+    pub sent:           u64,
+    pub success:        u64,
+    pub errors:         u64,
+    pub avg_latency_ms: f64,
 }
 
 /// Convenience wrapper so every task only needs one Arc clone.
