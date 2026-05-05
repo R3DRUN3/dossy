@@ -5,8 +5,10 @@
 
 <img src="./media/dossy_logo.png" width="300"/>
 
-DOSSY is a lightweight CLI for authorized volumetric Layer 7 HTTP stress testing, particularly suited for DoS simulations.  
+DOSSY is a lightweight CLI for authorized volumetric Layer 7 HTTP stress testing:  
+Volumetric DDoS, throughput flooding, connection exhaustion.    
 See the `features` paragraph for a list of capabilities.   
+<br/>
 For a deep dive on how Red Teams can build distributed infrastructure to simulate DDoS attacks, read [this article](https://www.neteye-blog.com/2025/02/building-a-distributed-ddos-infrastructure-for-red-teaming-campaigns/):  
 `dossy` is an excelent candidate for this type of activities !    
 
