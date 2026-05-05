@@ -82,15 +82,13 @@ async fn main() -> anyhow::Result<()> {
     let token   = CancellationToken::new();
 
     // ── Spawn workers ────────────────────────────────────────────────────────
-    let mut handles = Vec::with_capacity(cli.concurrency);
     for _ in 0..cli.concurrency {
-        let h = tokio::spawn(worker::run_worker(
+        tokio::spawn(worker::run_worker(
             client.clone(),
             Arc::clone(&targets),
             Arc::clone(&stats),
             token.clone(),
         ));
-        handles.push(h);
     }
 
     // ── Progress bar ─────────────────────────────────────────────────────────
@@ -107,15 +105,30 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let stats_ref = Arc::clone(&stats);
+    // ── Tick loop ─────────────────────────────────────────────────────────────
+    let stats_ref    = Arc::clone(&stats);
+    let mut prev_sent    = 0u64;
+    let mut prev_success = 0u64;
+    let mut prev_errors  = 0u64;
+
     for elapsed in 0..cli.duration {
         sleep(Duration::from_secs(1)).await;
         let snap = stats_ref.snapshot();
+
+        // Per-second deltas — not cumulative averages
+        let delta_sent    = snap.sent.saturating_sub(prev_sent);
+        let delta_success = snap.success.saturating_sub(prev_success);
+        let delta_errors  = snap.errors.saturating_sub(prev_errors);
+
+        prev_sent    = snap.sent;
+        prev_success = snap.success;
+        prev_errors  = snap.errors;
+
         let msg = format!(
             "req/s ≈ {:>6}  ✓ {:>8}  ✗ {:>6}  avg {:>7.2}ms",
-            snap.sent / (elapsed + 1),
-            snap.success,
-            snap.errors,
+            delta_sent,
+            delta_success,
+            delta_errors,
             snap.avg_latency_ms,
         );
         if let Some(ref pb) = bar {
@@ -128,13 +141,7 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Graceful shutdown ────────────────────────────────────────────────────
     token.cancel();
-
-    let _ = tokio::time::timeout(Duration::from_secs(2), async {
-        for handle in handles {
-            let _ = handle.await;
-        }
-    })
-    .await;
+    sleep(Duration::from_millis(50)).await;
 
     if let Some(pb) = bar {
         pb.finish_and_clear();
@@ -161,7 +168,7 @@ async fn main() -> anyhow::Result<()> {
     );
     println!("{}\n", "═══════════════════════════════════════".cyan());
 
-    Ok(())
+    std::process::exit(0);
 }
 
 fn print_banner() {
