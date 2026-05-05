@@ -6,21 +6,22 @@
 <img src="./media/dossy_logo.png" width="300"/>
 
 DOSSY is a lightweight CLI for authorized volumetric Layer 7 HTTP stress testing, particularly suited for DoS simulations.  
-It can send concurrent HTTP requests against one or more target URLs, track throughput and latency, and print a live progress view plus a final summary.  
-For a deep dive on how Red Teams can build infrastructure to simulate DDoS attacks, read [this article](https://www.neteye-blog.com/2025/02/building-a-distributed-ddos-infrastructure-for-red-teaming-campaigns/).  
+See the `features` paragraph for a list of capabilities.   
+For a deep dive on how Red Teams can build distributed infrastructure to simulate DDoS attacks, read [this article](https://www.neteye-blog.com/2025/02/building-a-distributed-ddos-infrastructure-for-red-teaming-campaigns/):  
+`dossy` is an excelent candidate for this type of activities !    
 
 <br/>
 
 
 > [!CAUTION]
-> **Use this tool only against systems you own or are explicitly authorized to test.**  
-> Unauthorized denial-of-service activity, service degradation, or traffic flooding against third-party systems is illegal, unethical, and prohibited.  
-> In the event that this tool is weaponized or otherwise used for unlawful, unauthorized, or harmful purposes, sole and exclusive responsibility  
-> shall rest with the individuals or entities making such use, and under no circumstances shall 
-> any liability be attributed to the developers, contributors, or maintainers of the tool.  
+> **Use this tool only on systems you own or are authorized to test.**  
+>  Unauthorized denial-of-service, service degradation, or traffic flooding against third-party systems is illegal and prohibited.  
+> Any unlawful or harmful misuse is solely the responsibility of the user; developers and contributors bear no liability.  
+
+
 
 ## Features  
-- Multi-target distribution
+- Multiple target support
 - Multiple HTTP methods support
 - User-Agent rotation
 - Randomized path suffixes
