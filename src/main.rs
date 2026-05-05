@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
+use clap::CommandFactory;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
@@ -16,10 +17,19 @@ use stats::Stats;
 
 #[derive(Parser, Debug)]
 #[command(
-    name    = "dossy",
+    name       = "dossy",
     version,
-    about   = "404: your server's will to live not found.",
+    about      = "your server's will to live not found.",
+    long_about = "
+  ██████╗  ██████╗ ███████╗███████╗██╗   ██╗
+  ██╔══██╗██╔═══██╗██╔════╝██╔════╝╚██╗ ██╔╝
+  ██║  ██║██║   ██║███████╗███████╗ ╚████╔╝
+  ██║  ██║██║   ██║╚════██║╚════██║  ╚██╔╝
+  ██████╔╝╚██████╔╝███████║███████║   ██║
+  ╚═════╝  ╚═════╝ ╚══════╝╚══════╝   ╚═╝
+"
 )]
+
 struct Cli {
     /// One or more target URLs (e.g. https://example.com)
     #[arg(short, long, required = true, value_name = "URL", num_args = 1..)]
@@ -151,12 +161,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn print_banner() {
-    println!("{}", r#"
-  ██████╗  ██████╗ ███████╗███████╗██╗   ██╗
-  ██╔══██╗██╔═══██╗██╔════╝██╔════╝╚██╗ ██╔╝
-  ██║  ██║██║   ██║███████╗███████╗ ╚████╔╝
-  ██║  ██║██║   ██║╚════██║╚════██║  ╚██╔╝
-  ██████╔╝╚██████╔╝███████║███████║   ██║
-  ╚═════╝  ╚═════╝ ╚══════╝╚══════╝   ╚═╝
-"#.cyan().bold());
+    println!(
+    "{}{}",
+    Cli::command().get_long_about().unwrap_or_default().to_string().cyan().bold(),
+    Cli::command().get_about().unwrap_or_default().to_string().cyan().bold());
 }
