@@ -106,30 +106,40 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // ── Tick loop ─────────────────────────────────────────────────────────────
-    let stats_ref    = Arc::clone(&stats);
-    let mut prev_sent    = 0u64;
-    let mut prev_success = 0u64;
-    let mut prev_errors  = 0u64;
+    let stats_ref        = Arc::clone(&stats);
+    let mut prev_sent       = 0u64;
+    let mut prev_success    = 0u64;
+    let mut prev_errors     = 0u64;
+    let mut prev_latency_us = 0u64;
 
     for elapsed in 0..cli.duration {
         sleep(Duration::from_secs(1)).await;
         let snap = stats_ref.snapshot();
 
-        // Per-second deltas — not cumulative averages
-        let delta_sent    = snap.sent.saturating_sub(prev_sent);
-        let delta_success = snap.success.saturating_sub(prev_success);
-        let delta_errors  = snap.errors.saturating_sub(prev_errors);
+        // Per-second deltas
+        let delta_sent       = snap.sent.saturating_sub(prev_sent);
+        let delta_success    = snap.success.saturating_sub(prev_success);
+        let delta_errors     = snap.errors.saturating_sub(prev_errors);
+        let delta_latency_us = snap.latency_us_total.saturating_sub(prev_latency_us);
 
-        prev_sent    = snap.sent;
-        prev_success = snap.success;
-        prev_errors  = snap.errors;
+        // Per-second avg latency in ms
+        let delta_avg_ms = if delta_success > 0 {
+            (delta_latency_us / delta_success) as f64 / 1_000.0
+        } else {
+            0.0
+        };
+
+        prev_sent       = snap.sent;
+        prev_success    = snap.success;
+        prev_errors     = snap.errors;
+        prev_latency_us = snap.latency_us_total;
 
         let msg = format!(
             "req/s ≈ {:>6}  ✓ {:>8}  ✗ {:>6}  avg {:>7.2}ms",
             delta_sent,
             delta_success,
             delta_errors,
-            snap.avg_latency_ms,
+            delta_avg_ms,
         );
         if let Some(ref pb) = bar {
             pb.set_position(elapsed + 1);

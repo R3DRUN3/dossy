@@ -7,17 +7,16 @@ pub(crate) struct Stats {
     pub sent:             AtomicU64,
     pub success:          AtomicU64,
     pub errors:           AtomicU64,
-    pub latency_us_total: AtomicU64, // microseconds, summed
+    pub latency_us_total: AtomicU64,
 }
 
 impl Stats {
-
     pub(crate) fn flush(
         &self,
         sent:       u64,
         success:    u64,
         errors:     u64,
-        latency_us: u64,  // total microseconds for this batch
+        latency_us: u64,
     ) {
         self.sent            .fetch_add(sent,       Ordering::Relaxed);
         self.success         .fetch_add(success,    Ordering::Relaxed);
@@ -35,16 +34,17 @@ impl Stats {
         } else {
             0.0
         };
-        StatsSnapshot { sent, success, errors, avg_latency_ms: avg_ms }
+        StatsSnapshot { sent, success, errors, avg_latency_ms: avg_ms, latency_us_total: lat_us }
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct StatsSnapshot {
-    pub sent:           u64,
-    pub success:        u64,
-    pub errors:         u64,
-    pub avg_latency_ms: f64,
+    pub sent:             u64,
+    pub success:          u64,
+    pub errors:           u64,
+    pub avg_latency_ms:   f64,
+    pub latency_us_total: u64, // exposed so main.rs can compute per-second deltas
 }
 
 /// Convenience wrapper so every task only needs one Arc clone.

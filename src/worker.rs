@@ -45,14 +45,19 @@ pub(crate) async fn run_worker(
             } => {
                 let (result, elapsed) = result;
                 match result {
-                    Ok(_)  => stats.flush(1, 1, 0, elapsed.as_micros() as u64),
+                    Ok(resp) => {
+                        let status = resp.status();
+                        if status.is_success() || status.is_redirection() {
+                            stats.flush(1, 1, 0, elapsed.as_micros() as u64);
+                        } else {
+                            stats.flush(1, 0, 1, 0);
+                        }
+                    }
                     Err(_) => stats.flush(1, 0, 1, 0),
                 }
             }
         }
 
-        // Catch cancellations that arrived while we were inside request.send(),
-        // so we never start a brand-new request after the test has ended.
         if token.is_cancelled() { break; }
     }
 }
