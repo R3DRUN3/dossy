@@ -9,11 +9,12 @@ tokio      = { version = "1",    features = ["full"] }
 tokio-util = { version = "0.7",  features = ["rt"] }
 clap       = { version = "4",    features = ["derive"] }
 rand       = "0.9"
-futures    = "0.3"
 indicatif  = "0.17"
 colored    = "2"
 anyhow     = "1"
 atty       = "0.2"
+futures        = "0.3"
+num_cpus       = "1"
 
 [profile.release]
 opt-level     = 3
@@ -21,3 +22,4 @@ lto           = true
 codegen-units = 1
 panic         = "abort"
 strip         = true
+

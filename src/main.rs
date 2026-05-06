@@ -92,14 +92,13 @@ async fn main() -> anyhow::Result<()> {
     let token   = CancellationToken::new();
 
     // ── Spawn workers ────────────────────────────────────────────────────────
-    for _ in 0..cli.concurrency {
-        tokio::spawn(worker::run_worker(
-            client.clone(),
-            Arc::clone(&targets),
-            Arc::clone(&stats),
-            token.clone(),
-        ));
-    }
+    worker::spawn_workers(
+        client,
+        Arc::clone(&targets),
+        Arc::clone(&stats),
+        token.clone(),
+        cli.concurrency,
+    );
 
     // ── Progress bar ─────────────────────────────────────────────────────────
     let bar = if !quiet {
