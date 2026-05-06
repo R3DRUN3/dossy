@@ -78,8 +78,8 @@ fn build_args(targets: &[String], rng: &mut SmallRng) -> ReqArgs {
 
     ReqArgs {
         url,
-        method: random_pick(HTTP_METHODS, rng),
-        ua:     random_pick(USER_AGENTS,  rng),
+        method: *random_pick(HTTP_METHODS, rng),
+        ua:     *random_pick(USER_AGENTS,  rng),
     }
 }
 
