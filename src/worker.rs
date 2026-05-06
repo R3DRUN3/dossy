@@ -11,7 +11,6 @@ use tokio_util::sync::CancellationToken;
 use crate::stats::SharedStats;
 use crate::utils::{HTTP_METHODS, USER_AGENTS, random_pick, random_path, roll_random_path};
 
-/// How many requests each worker keeps in-flight at once.
 const PIPELINE_DEPTH: usize = 64;
 
 fn worker_threads() -> usize {
@@ -21,13 +20,20 @@ fn worker_threads() -> usize {
         .unwrap_or_else(num_cpus::get)
 }
 
-/// Launches all workers on a dedicated Tokio runtime
+/// Passed into every worker: cheaply cloneable, body bytes shared via Arc.
+#[derive(Clone)]
+pub(crate) struct BodyConfig {
+    pub body:         Option<Arc<bytes::Bytes>>,
+    pub content_type: String,
+}
+
 pub(crate) fn spawn_workers(
     client:      Client,
     targets:     Arc<Vec<String>>,
     stats:       SharedStats,
     token:       CancellationToken,
     concurrency: usize,
+    body_cfg:    Arc<BodyConfig>,
 ) {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(worker_threads())
@@ -44,6 +50,7 @@ pub(crate) fn spawn_workers(
                     Arc::clone(&targets),
                     Arc::clone(&stats),
                     token.clone(),
+                    Arc::clone(&body_cfg),
                 )));
             }
             futures::future::join_all(handles).await;
@@ -52,7 +59,7 @@ pub(crate) fn spawn_workers(
 }
 
 // ── Owned request arguments ───────────────────────────────────────────────
-// All RNG work happens synchronously here, producing owned Strings.
+
 struct ReqArgs {
     url:    String,
     method: &'static str,
@@ -65,9 +72,7 @@ fn build_args(targets: &[String], rng: &mut SmallRng) -> ReqArgs {
     url.push_str(base);
 
     if roll_random_path(rng) {
-        if !base.ends_with('/') {
-            url.push('/');
-        }
+        if !base.ends_with('/') { url.push('/'); }
         url.push_str(&random_path(rng));
     }
 
@@ -81,30 +86,26 @@ fn build_args(targets: &[String], rng: &mut SmallRng) -> ReqArgs {
 // ── Worker loop ───────────────────────────────────────────────────────────
 
 pub(crate) async fn run_worker(
-    client:  Client,
-    targets: Arc<Vec<String>>,
-    stats:   SharedStats,
-    token:   CancellationToken,
+    client:   Client,
+    targets:  Arc<Vec<String>>,
+    stats:    SharedStats,
+    token:    CancellationToken,
+    body_cfg: Arc<BodyConfig>,
 ) {
     let mut rng  = SmallRng::from_os_rng();
     let mut pool = futures::stream::FuturesUnordered::new();
 
     loop {
-        // Fill the sliding window, all RNG calls finish before any future
-        // is stored, so rng is never borrowed across an await point.
         while pool.len() < PIPELINE_DEPTH && !token.is_cancelled() {
-            let args = build_args(&targets, &mut rng); 
-            pool.push(fire_one(client.clone(), args)); 
+            let args = build_args(&targets, &mut rng);
+            pool.push(fire_one(client.clone(), args, Arc::clone(&body_cfg)));
         }
 
-        if token.is_cancelled() && pool.is_empty() {
-            break;
-        }
+        if token.is_cancelled() && pool.is_empty() { break; }
 
         tokio::select! {
             biased;
             _ = token.cancelled() => {
-                // Drain in-flight requests so stats stay accurate.
                 while let Some(outcome) = pool.next().await {
                     record(&stats, outcome);
                 }
@@ -124,10 +125,9 @@ struct Outcome {
     latency_us: u64,
 }
 
-// Takes fully-owned ReqArgs: no lifetime ties back to rng or targets.
-async fn fire_one(client: Client, args: ReqArgs) -> Outcome {
+async fn fire_one(client: Client, args: ReqArgs, body_cfg: Arc<BodyConfig>) -> Outcome {
     let t0  = Instant::now();
-    let res = build_request(&client, args.method, &args.url, args.ua)
+    let res = build_request(&client, args.method, &args.url, args.ua, &body_cfg)
         .send()
         .await;
     let lat = t0.elapsed().as_micros() as u64;
@@ -135,7 +135,6 @@ async fn fire_one(client: Client, args: ReqArgs) -> Outcome {
     match res {
         Ok(resp) => {
             let s = resp.status();
-            // Drain body so the connection returns to the pool immediately.
             let _ = resp.bytes().await;
             if s.is_success() || s.is_redirection() {
                 Outcome { success: true,  latency_us: lat }
@@ -157,10 +156,11 @@ fn record(stats: &SharedStats, o: Outcome) {
 }
 
 fn build_request(
-    client: &Client,
-    method: &str,
-    url:    &str,
-    ua:     &str,
+    client:   &Client,
+    method:   &str,
+    url:      &str,
+    ua:       &str,
+    body_cfg: &BodyConfig,
 ) -> reqwest::RequestBuilder {
     let rb = match method {
         "GET"     => client.get(url),
@@ -171,7 +171,18 @@ fn build_request(
         "OPTIONS" => client.request(reqwest::Method::OPTIONS, url),
         _         => client.get(url),
     };
-    rb.header("User-Agent", ua)
-      .header("Accept", "*/*")
-      .header("Accept-Encoding", "identity")
+
+    let rb = rb
+        .header("User-Agent", ua)
+        .header("Accept", "*/*")
+        .header("Accept-Encoding", "identity");
+
+    // Only attach body on methods that carry one
+    match &body_cfg.body {
+        Some(body) if matches!(method, "POST" | "PUT" | "PATCH") => {
+            rb.header("Content-Type", &body_cfg.content_type)
+              .body(reqwest::Body::from((**body).clone()))
+        }
+        _ => rb,
+    }
 }

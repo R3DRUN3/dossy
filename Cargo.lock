@@ -276,6 +276,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "atty",
+ "bytes",
  "clap",
  "colored",
  "futures",
@@ -283,6 +284,8 @@ dependencies = [
  "num_cpus",
  "rand",
  "reqwest",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-util",
 ]

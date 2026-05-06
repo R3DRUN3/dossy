@@ -55,7 +55,7 @@ pub(crate) fn random_pick<'a, T>(slice: &'a [T], rng: &mut impl Rng) -> &'a T {
 }
 
 /// Generate a random alphanumeric path segment of length 5–25.
-/// Returns e.g. "4g8xqlo2v" — no leading slash, caller appends it.
+/// Returns e.g. "4g8xqlo2v" with no leading slash, caller appends it.
 pub(crate) fn random_path(rng: &mut impl Rng) -> String {
     let len = rng.random_range(5..=25);
     (0..len)

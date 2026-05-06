@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
+use std::path::PathBuf;
 
 use clap::Parser;
 use clap::CommandFactory;
@@ -30,7 +31,7 @@ use stats::Stats;
 "
 )]
 struct Cli {
-    /// One or more target URLs (e.g. https://example.com)
+    /// One or more target URLs
     #[arg(short, long, required = true, value_name = "URL", num_args = 1..)]
     targets: Vec<String>,
 
@@ -50,6 +51,18 @@ struct Cli {
     #[arg(long, default_value_t = 3, value_name = "SECS")]
     connect_timeout: u64,
 
+    /// Optional request body (e.g. '{"key":"value"}')
+    #[arg(long, value_name = "BODY")]
+    body: Option<String>,
+
+    /// Content-Type header when --body is used
+    #[arg(long, value_name = "MIME", default_value = "application/json")]
+    content_type: String,
+
+    /// Write final report to file (.json or .csv)
+    #[arg(long, value_name = "FILE")]
+    output: Option<PathBuf>,
+
     /// Suppress progress bar (useful in CI)
     #[arg(short, long)]
     quiet: bool,
@@ -58,8 +71,19 @@ struct Cli {
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-
     let quiet = cli.quiet || !atty::is(atty::Stream::Stdout);
+
+    // Validate --output extension up front
+    if let Some(ref path) = cli.output {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        if ext != "json" && ext != "csv" {
+            eprintln!(
+                "{} --output must end in .json or .csv (got {:?})",
+                "error:".red().bold(), path
+            );
+            std::process::exit(1);
+        }
+    }
 
     print_banner();
     println!(
@@ -74,6 +98,14 @@ async fn main() -> anyhow::Result<()> {
     for t in &cli.targets {
         println!("  {} {}", "•".dimmed(), t.underline());
     }
+    if let Some(ref b) = cli.body {
+        println!(
+            "  {} body ({}) : {}",
+            "•".dimmed(),
+            cli.content_type.dimmed(),
+            b.dimmed()
+        );
+    }
     println!();
 
     let client = Client::builder()
@@ -87,20 +119,27 @@ async fn main() -> anyhow::Result<()> {
         .http2_adaptive_window(true)
         .build()?;
 
-    let targets = Arc::new(cli.targets.clone());
-    let stats   = Arc::new(Stats::default());
-    let token   = CancellationToken::new();
+    let targets  = Arc::new(cli.targets.clone());
+    let stats    = Arc::new(Stats::default());
+    let token    = CancellationToken::new();
 
-    // ── Spawn workers ────────────────────────────────────────────────────────
+    // Build BodyConfig
+    let body_cfg = Arc::new(worker::BodyConfig {
+        body: cli.body.as_deref().map(|s| Arc::new(bytes::Bytes::copy_from_slice(s.as_bytes()))),
+        content_type: cli.content_type.clone(),
+    });
+
+    // Spawn workers
     worker::spawn_workers(
         client,
         Arc::clone(&targets),
         Arc::clone(&stats),
         token.clone(),
         cli.concurrency,
+        Arc::clone(&body_cfg),
     );
 
-    // ── Progress bar ─────────────────────────────────────────────────────────
+    // Progress bar
     let bar = if !quiet {
         let pb = ProgressBar::new(cli.duration);
         pb.set_style(
@@ -114,7 +153,7 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    // ── Tick loop ─────────────────────────────────────────────────────────────
+    // Tick loop
     let stats_ref           = Arc::clone(&stats);
     let mut prev_sent       = 0u64;
     let mut prev_success    = 0u64;
@@ -129,24 +168,19 @@ async fn main() -> anyhow::Result<()> {
         let delta_success    = snap.success.saturating_sub(prev_success);
         let delta_errors     = snap.errors.saturating_sub(prev_errors);
         let delta_latency_us = snap.latency_us_total.saturating_sub(prev_latency_us);
-
-        let delta_avg_ms = if delta_success > 0 {
+        let delta_avg_ms     = if delta_success > 0 {
             (delta_latency_us / delta_success) as f64 / 1_000.0
-        } else {
-            0.0
-        };
+        } else { 0.0 };
 
         prev_sent       = snap.sent;
         prev_success    = snap.success;
         prev_errors     = snap.errors;
         prev_latency_us = snap.latency_us_total;
 
+
         let msg = format!(
             "req/s ≈ {:>6}  ✓ {:>8}  ✗ {:>6}  avg {:>7.2}ms",
-            delta_sent,
-            delta_success,
-            delta_errors,
-            delta_avg_ms,
+            delta_sent, delta_success, delta_errors, delta_avg_ms,
         );
         if let Some(ref pb) = bar {
             pb.set_position(elapsed + 1);
@@ -156,34 +190,57 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // ── Graceful shutdown ────────────────────────────────────────────────────
+    // Graceful shutdown
     token.cancel();
     sleep(Duration::from_millis(50)).await;
+    if let Some(pb) = bar { pb.finish_and_clear(); }
 
-    if let Some(pb) = bar {
-        pb.finish_and_clear();
-    }
-
-    // ── Final report ─────────────────────────────────────────────────────────
+    // Final report (terminal)
     let snap = stats.snapshot();
     println!("\n{}", "═══════════════════════════════════════".cyan());
     println!(" {} Final Report", "dossy".bold().cyan());
     println!("{}", "═══════════════════════════════════════".cyan());
-    println!("  {:<22} {}", "Total requests sent:".dimmed(),  snap.sent.to_string().bold());
-    println!("  {:<22} {}", "Successful (2xx/3xx):".dimmed(), snap.success.to_string().green().bold());
-    println!("  {:<22} {}", "Errors / timeouts:".dimmed(),    snap.errors.to_string().red().bold());
-    println!("  {:<22} {:.2} ms", "Avg latency:".dimmed(),    snap.avg_latency_ms);
-    println!(
-        "  {:<22} {:.0} req/s",
-        "Throughput:".dimmed(),
-        snap.sent as f64 / cli.duration as f64
-    );
-    println!(
-        "  {:<22} {:.1} %",
-        "Success rate:".dimmed(),
-        if snap.sent > 0 { snap.success as f64 / snap.sent as f64 * 100.0 } else { 0.0 }
-    );
+    println!("  {:<22} {}",      "Total requests sent:".dimmed(),  snap.sent.to_string().bold());
+    println!("  {:<22} {}",      "Successful (2xx/3xx):".dimmed(), snap.success.to_string().green().bold());
+    println!("  {:<22} {}",      "Errors / timeouts:".dimmed(),    snap.errors.to_string().red().bold());
+    println!("  {:<22} {:.2} ms","Avg latency:".dimmed(),          snap.avg_latency_ms);
+    println!("  {:<22} {:.0} req/s", "Throughput:".dimmed(),
+        snap.sent as f64 / cli.duration as f64);
+    println!("  {:<22} {:.1} %", "Success rate:".dimmed(),
+        if snap.sent > 0 { snap.success as f64 / snap.sent as f64 * 100.0 } else { 0.0 });
     println!("{}\n", "═══════════════════════════════════════".cyan());
+
+    // Write output file if requested
+    if let Some(ref path) = cli.output {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let report = stats::Report {
+            duration_secs:    cli.duration,
+            concurrency:      cli.concurrency,
+            targets:          cli.targets.clone(),
+            body_provided:    cli.body.is_some(),
+            content_type:     cli.content_type.clone(),
+            total_sent:       snap.sent,
+            total_success:    snap.success,
+            total_errors:     snap.errors,
+            avg_latency_ms:   snap.avg_latency_ms,
+            throughput_rps:   snap.sent as f64 / cli.duration as f64,
+            success_rate_pct: if snap.sent > 0 {
+                snap.success as f64 / snap.sent as f64 * 100.0
+            } else { 0.0 },
+        };
+
+        match ext.as_str() {
+            "json" => std::fs::write(path, serde_json::to_string_pretty(&report)?)?,
+            "csv"  => std::fs::write(path, report.to_csv())?,
+            _      => unreachable!(),
+        }
+
+        println!(
+            "{} report written to {}\n",
+            "✓".green().bold(),
+            path.display().to_string().underline()
+        );
+    }
 
     std::process::exit(0);
 }
