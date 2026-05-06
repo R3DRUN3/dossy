@@ -1,5 +1,5 @@
 # ── Stage 1: builder ─────────────────────────────────────────────────────────
-FROM rust:alpine AS builder
+FROM rust:alpine3.22 AS builder
 
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
 
@@ -12,10 +12,11 @@ RUN RUSTFLAGS="-C target-feature=+crt-static" \
     cargo build --release --target x86_64-unknown-linux-musl \
     && strip /build/target/x86_64-unknown-linux-musl/release/dossy
 
-# ── Stage 2: minimal scratch image ───────────────────────────────────────────
-FROM scratch
+# ── Stage 2: minimal alpine image ────────────────────────────────────────────
+FROM  alpine:3.22.4
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN apk add --no-cache ca-certificates
+
 COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/dossy /dossy
 
 ENTRYPOINT ["/dossy"]

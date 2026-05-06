@@ -37,7 +37,8 @@ For a deep dive on how Red Teams can build distributed infrastructure to simulat
 
 
 ## Installation  
-You can download the [latest release binary](https://github.com/R3DRUN3/dossy/releases/latest), or install it via [docker](https://github.com/R3DRUN3/dossy/pkgs/container/dossy).  
+The recommended installation method is through the [latest release binary](https://github.com/R3DRUN3/dossy/releases/latest).  
+You can also install the tool via [docker](https://github.com/R3DRUN3/dossy/pkgs/container/dossy).  
 
 ## Usage  
 
