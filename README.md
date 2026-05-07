@@ -13,7 +13,8 @@ volumetric DoS, throughput flooding, connection exhaustion.
 Unlike synthetic benchmarking tools like `wrk` or `hey`, DOSSY simulates realistic adversarial traffic:  
 randomized clients, mixed HTTP methods, varied request bodies and paths, making it purpose-built for red teamers.  
 
-<br/>
+<br/>  
+
 For a deep dive on how Red Teams can build distributed infrastructure to simulate DDoS attacks, read [this article](https://www.neteye-blog.com/2025/02/building-a-distributed-ddos-infrastructure-for-red-teaming-campaigns/):  
 **DOSSY is an excelent candidate for this type of activities !**    
 
