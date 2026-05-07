@@ -3,13 +3,16 @@
 [![Latest Release](https://img.shields.io/github/v/release/r3drun3/dossy?logo=github)](https://github.com/r3drun3/dossy/releases/latest)   
 [![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](http://unlicense.org/)  ![Red Team Badge](https://img.shields.io/badge/Team-Red-red)  
 
-<img src="./media/dossy_logo.png" width="300"/>
+<img src="./media/logo.png" width="300"/>
+
+<br/>
 
 **DOSSY** is a lightweight CLI for authorized volumetric Layer 7 HTTP stress testing:  
-Volumetric DDoS, throughput flooding, connection exhaustion.    
-See the `features` paragraph for a list of capabilities.  
+volumetric DoS, throughput flooding, connection exhaustion.     
+
 Unlike synthetic benchmarking tools like `wrk` or `hey`, DOSSY simulates realistic adversarial traffic:  
 randomized clients, mixed HTTP methods, varied request bodies and paths, making it purpose-built for red teamers.  
+
 <br/>
 For a deep dive on how Red Teams can build distributed infrastructure to simulate DDoS attacks, read [this article](https://www.neteye-blog.com/2025/02/building-a-distributed-ddos-infrastructure-for-red-teaming-campaigns/):  
 **DOSSY is an excelent candidate for this type of activities !**    
