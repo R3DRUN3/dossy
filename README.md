@@ -31,7 +31,7 @@ For a deep dive on how Red Teams can build distributed infrastructure to simulat
 
 ## Features  
 - Multiple target support
-- Multiple HTTP methods support (GET, POST, PUT, DELETE, PATCH, OPTIONS)
+- Multiple HTTP methods support
 - User-Agent rotation (35+ real-world UAs)
 - Randomized path suffixes
 - Optional Custom request body (`--body`) with configurable `--content-type`

@@ -2,9 +2,50 @@ use rand::Rng;
 
 pub(crate) const HTTP_METHODS: &[&str] = &[
     "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH",
+    "HEAD", "TRACE", "CONNECT",
 ];
 
 const ALNUM: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+
+/// Plausible paths
+const KNOWN_PATHS: &[&str] = &[
+    "health",
+    "healthz",
+    "ready",
+    "readyz",
+    "live",
+    "livez",
+    "ping",
+    "status",
+    "metrics",
+    "actuator/health",
+    "actuator/info",
+    "actuator/metrics",
+    "sitemap.xml",
+    "robots.txt",
+    "favicon.ico",
+    "api/v1/status",
+    "api/v2/status",
+    "api/health",
+    "v1/ping",
+    "v2/ping",
+    "home",
+    "index",
+    "index.html",
+    "index.php",
+    "about",
+    "contact",
+    "login",
+    "logout",
+    "dashboard",
+    "profile",
+    "settings",
+    "search",
+    "help",
+    "faq",
+    "terms",
+    "privacy",
+];
 
 pub(crate) const USER_AGENTS: &[&str] = &[
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -54,13 +95,20 @@ pub(crate) fn random_pick<'a, T>(slice: &'a [T], rng: &mut impl Rng) -> &'a T {
     &slice[rng.random_range(0..slice.len())]
 }
 
-/// Generate a random alphanumeric path segment of length 5–25.
-/// Returns e.g. "4g8xqlo2v" with no leading slash, caller appends it.
+/// Generate a path segment. With ~40% probability returns a known plausible
+/// path from `KNOWN_PATHS`; otherwise generates a random alphanumeric string
+/// of length 5–25.
 pub(crate) fn random_path(rng: &mut impl Rng) -> String {
-    let len = rng.random_range(5..=25);
-    (0..len)
-        .map(|_| ALNUM[rng.random_range(0..ALNUM.len())] as char)
-        .collect()
+    if rng.random_range(0..100) < 40 {
+        // Return a known path that tends not to trigger firewalls/IDS
+        random_pick(KNOWN_PATHS, rng).to_string()
+    } else {
+        // Random alphanumeric fallback
+        let len = rng.random_range(5..=25);
+        (0..len)
+            .map(|_| ALNUM[rng.random_range(0..ALNUM.len())] as char)
+            .collect()
+    }
 }
 
 /// Returns true with 35% probability.
